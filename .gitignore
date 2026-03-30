@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.env
+.venv/
+venv/
+
+# Sprites (too large for repo, use fetch_sprites.py)
+assets/sprites/*.png
+
+# OS
+.DS_Store
+Thumbs.db
