@@ -1,5 +1,5 @@
 import pygame
-from typing import List
+from typing import List, Optional
 
 from pokemon import Pokemon, Move
 from battle import BattleEngine
@@ -34,8 +34,27 @@ class BattleUI:
         self.game_over = False
         self.winner = None
 
+        # Sprite cache
+        self.sprite_cache = {}
+
+    def load_sprite(self, pokemon: Pokemon) -> Optional[pygame.Surface]:
+        """Load sprite from assets/sprites/, return None if missing."""
+        if pokemon.id in self.sprite_cache:
+            return self.sprite_cache[pokemon.id]
+
+        # Try zero-padded filename e.g. 001.png
+        path = f"assets/sprites/{pokemon.id:03d}.png"
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            # Scale to a consistent size
+            img = pygame.transform.scale(img, (120, 120))
+            self.sprite_cache[pokemon.id] = img
+            return img
+        except Exception:
+            self.sprite_cache[pokemon.id] = None
+            return None
+
     def run(self):
-        """Run the battle."""
         running = True
         clock = pygame.time.Clock()
 
@@ -58,9 +77,8 @@ class BattleUI:
 
                 if event.type == pygame.MOUSEBUTTONDOWN and not self.game_over and self.next_turn_delay == 0:
                     pos = event.pos
-                    # Check move buttons
                     for i in range(4):
-                        btn_rect = pygame.Rect(SCREEN_WIDTH - 250, 580 + i * 45, 230, 40)
+                        btn_rect = pygame.Rect(SCREEN_WIDTH - 255, 575 + i * 48, 240, 42)
                         if btn_rect.collidepoint(pos):
                             self.selected_move = i
                             self.execute_turn()
@@ -71,21 +89,21 @@ class BattleUI:
             if self.game_over:
                 return self.handle_game_over(clock)
 
-            # Auto-continue after delay
             if self.next_turn_delay > 0:
                 self.next_turn_delay -= 1
-                if self.next_turn_delay == 0:
-                    self.execute_turn()
 
     def execute_turn(self):
-        """Execute a turn."""
         player_pokemon = self.engine.state.get_player_pokemon()
+        ai_pokemon = self.engine.state.get_ai_pokemon()
 
         if self.selected_move >= len(player_pokemon.moves):
             self.selected_move = 0
 
+        # FIX: get AI move and find its index in the AI pokemon's moves (not player's)
         ai_move = self.engine.get_ai_move()
-        ai_move_index = player_pokemon.moves.index(ai_move) if ai_move in player_pokemon.moves else 0
+        ai_move_index = 0
+        if ai_move in ai_pokemon.moves:
+            ai_move_index = ai_pokemon.moves.index(ai_move)
 
         self.engine.process_turn(self.selected_move, ai_move_index)
 
@@ -93,79 +111,90 @@ class BattleUI:
             self.game_over = True
             self.winner = self.engine.state.winner
         else:
-            self.next_turn_delay = 30  # ~0.5 second delay
+            self.next_turn_delay = 30
 
     def handle_game_over(self, clock) -> str:
-        """Handle game over screen."""
-        running = True
-
-        # Draw buttons
         play_again_btn = pygame.Rect(SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2, 180, 60)
         quit_btn = pygame.Rect(SCREEN_WIDTH // 2 + 20, SCREEN_HEIGHT // 2, 180, 60)
 
-        while running:
+        while True:
             clock.tick(60)
-
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return "quit"
-
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    pos = event.pos
-                    if play_again_btn.collidepoint(pos):
+                    if play_again_btn.collidepoint(event.pos):
                         return "play_again"
-                    elif quit_btn.collidepoint(pos):
+                    elif quit_btn.collidepoint(event.pos):
                         return "quit"
 
             self.draw_game_over(play_again_btn, quit_btn)
 
     def draw(self):
-        """Draw the battle screen."""
-        self.screen.fill(BLACK)
+        self.screen.fill((30, 30, 50))  # dark blue-gray instead of pure black
 
-        # Draw opponent Pokemon (top right)
         ai_pokemon = self.engine.state.get_ai_pokemon()
-        self.draw_pokemon(ai_pokemon, SCREEN_WIDTH - 200, 80, "ai", True)
-
-        # Draw player Pokemon (bottom left)
         player_pokemon = self.engine.state.get_player_pokemon()
-        self.draw_pokemon(player_pokemon, 150, SCREEN_HEIGHT - 250, "player", False)
 
-        # Draw HP bars
-        self.draw_hp_bar(ai_pokemon, 50, 80, 250, 30, "ai")
-        self.draw_hp_bar(player_pokemon, 350, SCREEN_HEIGHT - 280, 300, 35, "player")
+        # AI pokemon: top-right
+        self.draw_pokemon_sprite(ai_pokemon, SCREEN_WIDTH - 220, 60)
+        # Player pokemon: bottom-left  
+        self.draw_pokemon_sprite(player_pokemon, 100, SCREEN_HEIGHT - 280)
 
-        # Draw move buttons
+        # HP bars
+        self.draw_hp_bar(ai_pokemon, 40, 60, 280, 32, label_above=True)
+        self.draw_hp_bar(player_pokemon, 320, SCREEN_HEIGHT - 300, 330, 36, label_above=True)
+
+        # Move buttons
         self.draw_move_buttons(player_pokemon)
 
-        # Draw battle log
+        # Battle log
         self.draw_battle_log()
+
+        # Turn info
+        turn_text = self.font_small.render(f"Turn {self.engine.state.turn}", True, GRAY)
+        self.screen.blit(turn_text, (SCREEN_WIDTH // 2 - turn_text.get_width() // 2, 10))
+
+        # Team status dots
+        self.draw_team_status()
 
         pygame.display.flip()
 
-    def draw_pokemon(self, pokemon: Pokemon, x: int, y: int, trainer: str, is_front: bool):
-        """Draw a Pokemon sprite (placeholder)."""
-        # Draw placeholder rect
-        sprite_size = 120
-        sprite_rect = pygame.Rect(x, y, sprite_size, sprite_size)
+    def draw_pokemon_sprite(self, pokemon: Pokemon, x: int, y: int):
+        sprite = self.load_sprite(pokemon)
+        if sprite:
+            self.screen.blit(sprite, (x, y))
+        else:
+            # Colored placeholder
+            color = get_type_color(pokemon.types[0])
+            pygame.draw.rect(self.screen, color, (x, y, 120, 120))
+            # Draw pokemon initial
+            initial = self.font_title.render(pokemon.name[0], True, WHITE)
+            self.screen.blit(initial, (x + 60 - initial.get_width() // 2,
+                                        y + 60 - initial.get_height() // 2))
 
-        color = get_type_color(pokemon.types[0])
-        pygame.draw.rect(self.screen, color, sprite_rect)
-
-        # Draw name
-        name = self.font_name.render(pokemon.name, True, WHITE)
-        self.screen.blit(name, (x, y - 35))
-
-    def draw_hp_bar(self, pokemon: Pokemon, x: int, y: int, width: int, height: int, trainer: str):
-        """Draw an HP bar."""
+    def draw_hp_bar(self, pokemon: Pokemon, x: int, y: int, width: int, height: int, label_above=False):
         max_hp = pokemon.get_max_hp()
-        current_hp = pokemon.current_hp
+        current_hp = max(0, pokemon.current_hp)
+        hp_percent = current_hp / max_hp if max_hp > 0 else 0
 
-        # Background
+        name_y = y - 28 if label_above else y + height + 5
+        name_text = self.font_name.render(pokemon.name, True, WHITE)
+        self.screen.blit(name_text, (x, name_y))
+
+        # Status badge
+        if pokemon.status:
+            status_colors = {"burned": (255, 100, 0), "poisoned": (160, 0, 160),
+                             "paralyzed": (255, 220, 0), "sleep": (100, 100, 200),
+                             "frozen": (100, 200, 255)}
+            sc = status_colors.get(pokemon.status, GRAY)
+            s_surf = self.font_tiny.render(pokemon.status[:3].upper(), True, WHITE)
+            s_rect = pygame.Rect(x + name_text.get_width() + 8, name_y + 2, 30, 18)
+            pygame.draw.rect(self.screen, sc, s_rect)
+            self.screen.blit(s_surf, (s_rect.x + 2, s_rect.y + 2))
+
         pygame.draw.rect(self.screen, DARK_GRAY, (x, y, width, height))
 
-        # HP color based on percentage
-        hp_percent = current_hp / max_hp if max_hp > 0 else 0
         if hp_percent > 0.5:
             hp_color = GREEN
         elif hp_percent > 0.2:
@@ -173,82 +202,76 @@ class BattleUI:
         else:
             hp_color = RED
 
-        # HP bar
         bar_width = int((width - 4) * hp_percent)
         if bar_width > 0:
             pygame.draw.rect(self.screen, hp_color, (x + 2, y + 2, bar_width, height - 4))
 
-        # Border
         pygame.draw.rect(self.screen, WHITE, (x, y, width, height), 2)
 
-        # HP text
         hp_text = self.font_small.render(f"{current_hp}/{max_hp}", True, WHITE)
-        self.screen.blit(hp_text, (x + width + 10, y + 5))
-
-        # Name for player
-        if trainer == "player":
-            name = self.font_name.render(pokemon.name, True, WHITE)
-            self.screen.blit(name, (x, y - 30))
+        self.screen.blit(hp_text, (x + width + 10, y + height // 2 - hp_text.get_height() // 2))
 
     def draw_move_buttons(self, pokemon: Pokemon):
-        """Draw move selection buttons."""
-        x = SCREEN_WIDTH - 250
-        y = 580
+        x = SCREEN_WIDTH - 255
+        y = 560
 
-        title = self.font_name.render("Moves:", True, WHITE)
-        self.screen.blit(title, (x, y - 35))
+        title = self.font_name.render("Choose a move:", True, WHITE)
+        self.screen.blit(title, (x, y - 30))
 
         for i, move in enumerate(pokemon.moves[:4]):
-            btn_rect = pygame.Rect(x, y + i * 45, 230, 40)
-
-            # Highlight selected
+            btn_rect = pygame.Rect(x, y + i * 48, 240, 42)
             color = get_type_color(move.type)
+
             if i == self.selected_move:
                 pygame.draw.rect(self.screen, YELLOW, btn_rect, 4)
 
             pygame.draw.rect(self.screen, color, btn_rect)
             pygame.draw.rect(self.screen, WHITE, btn_rect, 2)
 
-            # Move name
-            name = self.font_small.render(move.name[:20], True, BLACK)
-            self.screen.blit(name, (x + 10, y + i * 45 + 10))
+            name = self.font_small.render(move.name[:18], True, BLACK)
+            self.screen.blit(name, (x + 8, y + i * 48 + 10))
 
-            # PP
-            pp_text = self.font_tiny.render(f"PP: {move.pp}", True, BLACK)
-            self.screen.blit(pp_text, (x + 150, y + i * 45 + 15))
+            pp_text = self.font_tiny.render(f"PP {move.pp}", True, DARK_GRAY)
+            self.screen.blit(pp_text, (x + 185, y + i * 48 + 14))
 
-            # Key hint
             key = self.font_tiny.render(f"[{i + 1}]", True, DARK_GRAY)
-            self.screen.blit(key, (x + 205, y + i * 45 + 15))
+            self.screen.blit(key, (x + 220, y + i * 48 + 14))
 
     def draw_battle_log(self):
-        """Draw the battle log."""
-        log_rect = pygame.Rect(50, 450, 400, 120)
+        log_rect = pygame.Rect(40, 430, 430, 140)
         pygame.draw.rect(self.screen, DARK_GRAY, log_rect)
         pygame.draw.rect(self.screen, WHITE, log_rect, 2)
 
-        title = self.font_small.render("Battle Log:", True, GRAY)
-        self.screen.blit(title, (60, 455))
+        title = self.font_small.render("Battle Log", True, GRAY)
+        self.screen.blit(title, (50, 436))
 
-        # Draw last 4 log entries
-        log = self.engine.state.battle_log[-4:]
+        log = self.engine.state.battle_log[-5:]
         for i, msg in enumerate(log):
-            text = self.font_tiny.render(msg[:50], True, WHITE)
-            self.screen.blit(text, (60, 480 + i * 25))
+            text = self.font_tiny.render(msg[:58], True, WHITE)
+            self.screen.blit(text, (50, 458 + i * 22))
+
+    def draw_team_status(self):
+        """Show HP dots for both teams."""
+        # Player team (bottom)
+        for i, p in enumerate(self.engine.state.player_team):
+            color = GREEN if not p.is_fainted() else RED
+            pygame.draw.circle(self.screen, color, (40 + i * 20, SCREEN_HEIGHT - 20), 7)
+
+        # AI team (top)
+        for i, p in enumerate(self.engine.state.ai_team):
+            color = GREEN if not p.is_fainted() else RED
+            pygame.draw.circle(self.screen, color, (SCREEN_WIDTH - 40 - i * 20, 20), 7)
 
     def draw_game_over(self, play_again_btn, quit_btn):
-        """Draw game over screen."""
         self.screen.fill(BLACK)
 
-        # Result
         if self.winner == "player":
             result = self.font_title.render("VICTORY!", True, GREEN)
         else:
             result = self.font_title.render("DEFEAT!", True, RED)
 
-        self.screen.blit(result, (SCREEN_WIDTH // 2 - result.get_width() // 2, SCREEN_HEIGHT // 2 - 100))
+        self.screen.blit(result, (SCREEN_WIDTH // 2 - result.get_width() // 2, SCREEN_HEIGHT // 2 - 120))
 
-        # Buttons
         pygame.draw.rect(self.screen, GREEN, play_again_btn)
         pygame.draw.rect(self.screen, WHITE, play_again_btn, 2)
         pa_text = self.font_name.render("Play Again", True, WHITE)
