@@ -1,5 +1,5 @@
 import random
-from typing import List, Dict, Tuple, Optional
+from typing import List, Optional
 
 from pokemon import Pokemon, Move
 
@@ -40,14 +40,12 @@ TYPE_CHART = {
     ("Fairy", "Fire"): 0.5, ("Fairy", "Fighting"): 2, ("Fairy", "Poison"): 0.5, ("Fairy", "Dragon"): 2,
     ("Fairy", "Dark"): 2, ("Fairy", "Steel"): 0.5,
 }
-TYPE_CHART_DEFAULT = 1.0
 
 
 def get_type_effectiveness(move_type: str, target_types: List[str]) -> float:
     effectiveness = 1.0
     for target_type in target_types:
-        key = (move_type, target_type)
-        effectiveness *= TYPE_CHART.get(key, TYPE_CHART_DEFAULT)
+        effectiveness *= TYPE_CHART.get((move_type, target_type), 1.0)
     return effectiveness
 
 
@@ -61,6 +59,8 @@ class BattleState:
         self.battle_log: List[str] = []
         self.game_over = False
         self.winner: Optional[str] = None
+        # Faint animation state: set to "player" or "ai" while animating a KO
+        self.pending_faint: Optional[str] = None
 
     def get_player_pokemon(self) -> Pokemon:
         return self.player_team[self.player_active]
@@ -68,23 +68,41 @@ class BattleState:
     def get_ai_pokemon(self) -> Pokemon:
         return self.ai_team[self.ai_active]
 
-    def is_player_fainted(self) -> bool:
-        return self.get_player_pokemon().is_fainted()
-
-    def is_ai_fainted(self) -> bool:
-        return self.get_ai_pokemon().is_fainted()
-
-    def check_faints(self) -> Optional[str]:
-        if self.is_player_fainted():
-            return "player"
-        if self.is_ai_fainted():
-            return "ai"
-        return None
-
     def add_log(self, message: str):
         self.battle_log.append(message)
-        if len(self.battle_log) > 5:
+        if len(self.battle_log) > 8:
             self.battle_log.pop(0)
+
+    def next_alive(self, team: List[Pokemon], current: int) -> Optional[int]:
+        """Return index of next alive pokemon after current, or None if all fainted."""
+        for i in range(len(team)):
+            if i != current and not team[i].is_fainted():
+                return i
+        return None
+
+    def all_player_fainted(self) -> bool:
+        return all(p.is_fainted() for p in self.player_team)
+
+    def all_ai_fainted(self) -> bool:
+        return all(p.is_fainted() for p in self.ai_team)
+
+    def advance_player(self) -> bool:
+        """Switch player to next alive pokemon. Returns True if switch happened."""
+        nxt = self.next_alive(self.player_team, self.player_active)
+        if nxt is not None:
+            self.player_active = nxt
+            self.add_log(f"Go, {self.player_team[nxt].name}!")
+            return True
+        return False
+
+    def advance_ai(self) -> bool:
+        """Switch AI to next alive pokemon. Returns True if switch happened."""
+        nxt = self.next_alive(self.ai_team, self.ai_active)
+        if nxt is not None:
+            self.ai_active = nxt
+            self.add_log(f"Foe sent out {self.ai_team[nxt].name}!")
+            return True
+        return False
 
 
 class BattleEngine:
@@ -94,10 +112,8 @@ class BattleEngine:
     def calculate_damage(self, move: Move, attacker: Pokemon, defender: Pokemon) -> int:
         if move.power == 0:
             return 0
-
         level = attacker.level
         power = move.power
-
         if move.category == "Physical":
             atk = attacker.get_effective_stat("atk")
             if attacker.status == "burned":
@@ -106,154 +122,147 @@ class BattleEngine:
         else:
             atk = attacker.get_effective_stat("spa")
             defense = defender.get_effective_stat("spd")
-
         stab = 1.5 if attacker.has_type(move.type) else 1.0
         effectiveness = get_type_effectiveness(move.type, defender.types)
         random_factor = random.uniform(0.85, 1.0)
-
         damage = ((2 * level / 5 + 2) * power * (atk / defense) / 50 + 2) * effectiveness * stab * random_factor
         return max(1, int(damage))
 
     def execute_move(self, move: Move, attacker: Pokemon, defender: Pokemon, attacker_name: str) -> str:
         if random.randint(1, 100) > move.accuracy:
             return f"{attacker_name}'s {move.name} missed!"
-
         damage = self.calculate_damage(move, attacker, defender)
         defender.take_damage(damage)
-
         result = f"{attacker_name} used {move.name}!"
         effectiveness = get_type_effectiveness(move.type, defender.types)
         if effectiveness > 1:
-            result += " It's super effective!"
-        elif effectiveness < 1 and effectiveness > 0:
-            result += " It's not very effective..."
+            result += " Super effective!"
+        elif 0 < effectiveness < 1:
+            result += " Not very effective..."
         elif effectiveness == 0:
-            result += " It had no effect!"
-
+            result += " No effect!"
         return result
 
     def process_status_turn(self, pokemon: Pokemon, name: str) -> List[str]:
-        messages = []
-
+        """Returns list of messages. Special sentinel 'skip' means pokemon can't move."""
         if pokemon.status == "poisoned":
             damage = pokemon.get_max_hp() // 8
             pokemon.take_damage(damage)
-            messages.append(f"{name} is hurt by poison!")
+            return [f"{name} is hurt by poison!"]
         elif pokemon.status == "burned":
             damage = pokemon.get_max_hp() // 8
             pokemon.take_damage(damage)
-            messages.append(f"{name} is hurt by its burn!")
+            return [f"{name} is hurt by its burn!"]
         elif pokemon.status == "paralyzed":
             if random.random() < 0.25:
-                messages.append(f"{name} is paralyzed and can't move!")
-                return ["paralyzed"]
+                return ["skip", f"{name} is paralyzed and can't move!"]
         elif pokemon.status == "sleep":
             pokemon.sleep_turns -= 1
             if pokemon.sleep_turns <= 0:
                 pokemon.status = None
-                messages.append(f"{name} woke up!")
+                return [f"{name} woke up!"]
             else:
-                messages.append(f"{name} is asleep!")
-                return ["asleep"]
-
-        return messages
+                return ["skip", f"{name} is fast asleep!"]
+        return []
 
     def get_ai_move(self) -> Move:
         ai_pokemon = self.state.get_ai_pokemon()
         player_pokemon = self.state.get_player_pokemon()
-
         if random.random() < 0.2:
             return random.choice(ai_pokemon.moves)
-
         best_move = ai_pokemon.moves[0]
         best_score = -1
-
         for move in ai_pokemon.moves:
             if move.power == 0:
                 score = 10
             else:
                 damage = self.calculate_damage(move, ai_pokemon, player_pokemon)
-                effectiveness = get_type_effectiveness(move.type, player_pokemon.types)
-                score = damage * effectiveness
-
+                score = damage * get_type_effectiveness(move.type, player_pokemon.types)
                 if ai_pokemon.has_type(move.type):
                     score *= 1.5
-
             if score > best_score:
                 best_score = score
                 best_move = move
-
         return best_move
 
+    def _handle_faint(self, who: str):
+        """Log the faint and advance to next pokemon. Sets game_over if team wiped."""
+        s = self.state
+        if who == "player":
+            s.add_log(f"{s.get_player_pokemon().name} fainted!")
+            if s.all_player_fainted():
+                s.game_over = True
+                s.winner = "ai"
+                s.add_log("You lost!")
+            else:
+                s.advance_player()
+        else:
+            s.add_log(f"{s.get_ai_pokemon().name} fainted!")
+            if s.all_ai_fainted():
+                s.game_over = True
+                s.winner = "player"
+                s.add_log("You won!")
+            else:
+                s.advance_ai()
+
     def process_turn(self, player_move_index: int, ai_move_index: int):
-        player_pokemon = self.state.get_player_pokemon()
-        ai_pokemon = self.state.get_ai_pokemon()
+        s = self.state
+        player = s.get_player_pokemon()
+        ai = s.get_ai_pokemon()
 
-        player_move = player_pokemon.moves[player_move_index]
-        ai_move = ai_pokemon.moves[ai_move_index]
+        player_move = player.moves[min(player_move_index, len(player.moves) - 1)]
+        ai_move = ai.moves[min(ai_move_index, len(ai.moves) - 1)]
 
-        player_speed = player_pokemon.get_effective_stat("spe")
-        ai_speed = ai_pokemon.get_effective_stat("spe")
+        # Determine turn order by speed
+        p_speed = player.get_effective_stat("spe") // (2 if player.status == "paralyzed" else 1)
+        a_speed = ai.get_effective_stat("spe") // (2 if ai.status == "paralyzed" else 1)
 
-        if player_pokemon.status == "paralyzed":
-            player_speed //= 2
-        if ai_pokemon.status == "paralyzed":
-            ai_speed //= 2
-
-        if player_speed >= ai_speed:
-            first, second = "player", "ai"
-            first_move, second_move = player_move, ai_move
-            first_pokemon, second_pokemon = player_pokemon, ai_pokemon
-            first_name = player_pokemon.name
-            second_name = "AI " + ai_pokemon.name
+        if p_speed >= a_speed:
+            order = [("player", player, player_move, ai),
+                     ("ai",     ai,     ai_move,     player)]
         else:
-            first, second = "ai", "player"
-            first_move, second_move = ai_move, player_move
-            first_pokemon, second_pokemon = ai_pokemon, player_pokemon
-            first_name = "AI " + ai_pokemon.name
-            second_name = player_pokemon.name
+            order = [("ai",     ai,     ai_move,     player),
+                     ("player", player, player_move, ai)]
 
-        status_msgs = self.process_status_turn(first_pokemon, first_name)
-        if status_msgs and status_msgs[0] in ["paralyzed", "asleep"]:
-            self.state.add_log(status_msgs[1] if len(status_msgs) > 1 else status_msgs[0])
-        else:
+        for attacker_side, attacker, move, defender in order:
+            # Skip if attacker already fainted (e.g. died to poison this turn)
+            if attacker.is_fainted():
+                continue
+
+            defender_side = "ai" if attacker_side == "player" else "player"
+            attacker_name = attacker.name if attacker_side == "player" else f"Foe {attacker.name}"
+
+            # Status pre-move check
+            status_msgs = self.process_status_turn(attacker, attacker_name)
+            skip = False
             for msg in status_msgs:
-                self.state.add_log(msg)
+                if msg == "skip":
+                    skip = True
+                else:
+                    s.add_log(msg)
 
-            result = self.execute_move(first_move, first_pokemon, second_pokemon, first_name)
-            self.state.add_log(result)
+            # Check if attacker fainted from status damage
+            if attacker.is_fainted():
+                self._handle_faint(attacker_side)
+                if s.game_over:
+                    return
+                continue
 
-        if second_pokemon.is_fainted():
-            self.state.add_log(f"{second_name} fainted!")
-            fainted = self.state.check_faints()
-            if fainted:
-                return
+            if skip:
+                continue
 
-        if not second_pokemon.is_fainted():
-            status_msgs = self.process_status_turn(second_pokemon, second_name)
-            if status_msgs and status_msgs[0] in ["paralyzed", "asleep"]:
-                self.state.add_log(status_msgs[1] if len(status_msgs) > 1 else status_msgs[0])
-            else:
-                for msg in status_msgs:
-                    self.state.add_log(msg)
+            # Execute the move
+            result = self.execute_move(move, attacker, defender, attacker_name)
+            s.add_log(result)
 
-                result = self.execute_move(second_move, second_pokemon, first_pokemon, second_name)
-                self.state.add_log(result)
+            # Reduce PP
+            move.pp = max(0, move.pp - 1)
 
-        fainted = self.state.check_faints()
-        if fainted:
-            if fainted == "player":
-                self.state.add_log(f"{player_pokemon.name} fainted!")
-            else:
-                self.state.add_log(f"{ai_pokemon.name} fainted!")
+            # Check if defender fainted
+            if defender.is_fainted():
+                self._handle_faint(defender_side)
+                if s.game_over:
+                    return
+                # Don't break — the other pokemon may still attack next
 
-        if all(p.is_fainted() for p in self.state.player_team):
-            self.state.winner = "ai"
-            self.state.game_over = True
-            self.state.add_log("You lost!")
-        elif all(p.is_fainted() for p in self.state.ai_team):
-            self.state.winner = "player"
-            self.state.game_over = True
-            self.state.add_log("You won!")
-
-        self.state.turn += 1
+        s.turn += 1
