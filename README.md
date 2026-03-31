@@ -1,6 +1,7 @@
 # Pokémon Draft
 
 Un'applicazione desktop per fare draft di squadre Pokémon (Gen 1) e combattere, costruita con Python e Pygame.
+
 ![PokeDraft Logo](pokeball.svg)
 
 ## Requisiti
