@@ -8,17 +8,16 @@ from utils import (
     get_type_color, calculate_base_stat_total, format_stat_name
 )
 
-
-# Colors
+# Colori UI (Rinnovati per un look più "Pokémon")
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (128, 128, 128)
 DARK_GRAY = (64, 64, 64)
-LIGHT_GRAY = (200, 200, 200)
-BLUE = (100, 100, 255)
-GREEN = (50, 200, 50)
-RED = (200, 50, 50)
-YELLOW = (255, 255, 0)
+LIGHT_GRAY = (220, 225, 230)
+BLUE_BG = (180, 210, 240)    # Sfondo azzurro stile Box PC
+UI_BORDER = (45, 55, 65)
+GREEN_BTN = (70, 200, 110)
+YELLOW_SEL = (255, 220, 50)
 
 # UI Constants
 SCREEN_WIDTH = 1024
@@ -33,10 +32,11 @@ CARD_HEIGHT = 240
 class DraftScreen:
     def __init__(self, screen: pygame.Surface):
         self.screen = screen
-        self.font_title = pygame.font.Font(None, 48)
-        self.font_name = pygame.font.Font(None, 28)
-        self.font_small = pygame.font.Font(None, 22)
-        self.font_tiny = pygame.font.Font(None, 18)
+        # Font leggermente ingranditi/riorganizzati per leggibilità
+        self.font_title = pygame.font.Font(None, 52)
+        self.font_name = pygame.font.Font(None, 30)
+        self.font_small = pygame.font.Font(None, 24)
+        self.font_tiny = pygame.font.Font(None, 20)
 
         # Load data
         self.pokemon_data = load_pokemon_data()
@@ -54,11 +54,17 @@ class DraftScreen:
         self.selection_rects: List[pygame.Rect] = []
 
         # Confirm button
-        self.confirm_button = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 80, 200, 50)
+        self.confirm_button = pygame.Rect(SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT - 90, 240, 55)
         self.confirm_clicked = False
 
+    def _draw_text_with_shadow(self, text: str, font: pygame.font.Font, color: Tuple, x: int, y: int, shadow_color=DARK_GRAY):
+        """Disegna il testo con una classica ombra in stile Pokémon."""
+        shadow_surf = font.render(text, True, shadow_color)
+        text_surf = font.render(text, True, color)
+        self.screen.blit(shadow_surf, (x + 2, y + 2))
+        self.screen.blit(text_surf, (x, y))
+
     def run(self) -> List[Pokemon]:
-        """Run the draft screen and return the team."""
         running = True
         clock = pygame.time.Clock()
 
@@ -73,20 +79,17 @@ class DraftScreen:
                     pos = event.pos
 
                     if self.popup_active:
-                        # Check selection clicks
                         for i, rect in enumerate(self.selection_rects):
                             if rect.collidepoint(pos):
                                 self.select_pokemon(i)
                                 break
                     else:
-                        # Check slot clicks
                         for i in range(6):
                             slot_rect = self.get_slot_rect(i)
                             if slot_rect.collidepoint(pos) and self.team[i] is None:
                                 self.open_selection(i)
                                 break
 
-                        # Check confirm button
                         if self.is_team_complete() and self.confirm_button.collidepoint(pos):
                             running = False
                             self.confirm_clicked = True
@@ -96,32 +99,23 @@ class DraftScreen:
         return self.build_team()
 
     def get_slot_rect(self, index: int) -> pygame.Rect:
-        """Get the rectangle for a team slot."""
         total_width = 6 * SLOT_WIDTH + 5 * SLOT_SPACING
         start_x = (SCREEN_WIDTH - total_width) // 2
         x = start_x + index * (SLOT_WIDTH + SLOT_SPACING)
-        y = 120
+        y = 150
         return pygame.Rect(x, y, SLOT_WIDTH, SLOT_HEIGHT)
 
     def open_selection(self, slot_index: int):
-        """Open the Pokemon selection popup for a slot."""
         self.current_slot = slot_index
         self.popup_active = True
-
-        # Get Pokemon not already in team
         team_ids = [p.id for p in self.team if p is not None]
         available = [p for p in self.pokemon_data if p["id"] not in team_ids]
-
-        # Random selection of 3
         self.selection_options = random.sample(available, min(3, len(available)))
         self.selection_rects = []
 
     def select_pokemon(self, option_index: int):
-        """Select a Pokemon from the popup."""
         if 0 <= option_index < len(self.selection_options):
             p_data = self.selection_options[option_index]
-
-            # Create Pokemon object
             move_ids = self.learnsets_data.get(str(p_data["id"]), [])
             moves = []
             for mid in move_ids:
@@ -136,7 +130,6 @@ class DraftScreen:
                 base_stats=p_data["base_stats"],
                 moves=moves
             )
-
             self.team[self.current_slot] = pokemon
             self.popup_active = False
 
@@ -144,116 +137,141 @@ class DraftScreen:
         return all(p is not None for p in self.team)
 
     def build_team(self) -> List[Pokemon]:
-        """Build the final team list."""
         return [p for p in self.team if p is not None]
 
     def draw(self):
-        """Draw the draft screen."""
-        self.screen.fill(BLACK)
+        # Sfondo morbido per il draft
+        self.screen.fill(BLUE_BG)
+        
+        # Effetto "Strisce" sullo sfondo (opzionale, aggiunge profondità)
+        for i in range(0, SCREEN_HEIGHT, 40):
+            pygame.draw.line(self.screen, (190, 220, 250), (0, i), (SCREEN_WIDTH, i), 2)
 
         # Title
-        title = self.font_title.render("Pokemon Draft", True, WHITE)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 30))
+        title_text = "Seleziona la tua Squadra"
+        title_w = self.font_title.size(title_text)[0]
+        self._draw_text_with_shadow(title_text, self.font_title, WHITE, SCREEN_WIDTH // 2 - title_w // 2, 40)
 
         # Draw slots
         for i in range(6):
             rect = self.get_slot_rect(i)
             self.draw_slot(rect, self.team[i], i == self.current_slot)
 
-        # Draw confirm button if team complete
+        # Draw confirm button
         if self.is_team_complete():
-            pygame.draw.rect(self.screen, GREEN, self.confirm_button)
-            text = self.font_name.render("Confirm Team", True, WHITE)
-            self.screen.blit(text, (self.confirm_button.centerx - text.get_width() // 2,
-                                     self.confirm_button.centery - text.get_height() // 2))
+            # Ombra pulsante
+            shadow_rect = self.confirm_button.copy()
+            shadow_rect.y += 4
+            pygame.draw.rect(self.screen, DARK_GRAY, shadow_rect, border_radius=12)
+            # Pulsante vero
+            pygame.draw.rect(self.screen, GREEN_BTN, self.confirm_button, border_radius=12)
+            pygame.draw.rect(self.screen, WHITE, self.confirm_button, 3, border_radius=12)
+            
+            text_w = self.font_name.size("Conferma Team")[0]
+            text_h = self.font_name.size("Conferma Team")[1]
+            self._draw_text_with_shadow("Conferma Team", self.font_name, WHITE, 
+                                        self.confirm_button.centerx - text_w // 2, 
+                                        self.confirm_button.centery - text_h // 2)
 
-        # Draw popup if active
         if self.popup_active:
             self.draw_popup()
 
         pygame.display.flip()
 
     def draw_slot(self, rect: pygame.Rect, pokemon: Optional[Pokemon], highlighted: bool):
-        """Draw a team slot."""
-        color = BLUE if highlighted else DARK_GRAY
+        # Ombra della card
+        shadow_rect = rect.copy()
+        shadow_rect.x += 4
+        shadow_rect.y += 4
+        pygame.draw.rect(self.screen, (150, 180, 210), shadow_rect, border_radius=15)
+
+        # Colore card
+        bg_color = WHITE
+        border_color = YELLOW_SEL if highlighted else UI_BORDER
         if pokemon:
-            color = GREEN
+            bg_color = (245, 255, 245)
 
-        pygame.draw.rect(self.screen, color, rect, 2)
-        self.screen.fill(color, rect)
+        pygame.draw.rect(self.screen, bg_color, rect, border_radius=15)
+        pygame.draw.rect(self.screen, border_color, rect, 4 if highlighted else 2, border_radius=15)
 
         if pokemon:
-            # Draw placeholder for sprite
-            sprite_rect = pygame.Rect(rect.x + 20, rect.y + 20, 100, 80)
-            pygame.draw.rect(self.screen, get_type_color(pokemon.types[0]), sprite_rect)
+            sprite_rect = pygame.Rect(rect.x + 20, rect.y + 15, 100, 80)
+            pygame.draw.rect(self.screen, get_type_color(pokemon.types[0]), sprite_rect, border_radius=8)
 
-            # Draw name
-            name_text = self.font_small.render(pokemon.name, True, WHITE)
-            self.screen.blit(name_text, (rect.centerx - name_text.get_width() // 2,
-                                          rect.y + 110))
+            name_w = self.font_small.size(pokemon.name)[0]
+            self._draw_text_with_shadow(pokemon.name, self.font_small, BLACK, 
+                                        rect.centerx - name_w // 2, rect.y + 105, shadow_color=LIGHT_GRAY)
 
-            # Draw types
+            # Tipi con pillole smussate
             for j, ptype in enumerate(pokemon.types):
                 type_color = get_type_color(ptype)
-                type_rect = pygame.Rect(rect.x + 10 + j * 60, rect.y + 135, 55, 20)
-                pygame.draw.rect(self.screen, type_color, type_rect)
-                type_text = self.font_tiny.render(ptype[:3].upper(), True, BLACK)
-                self.screen.blit(type_text, (type_rect.centerx - type_text.get_width() // 2,
-                                               type_rect.centery - type_text.get_height() // 2))
+                type_rect = pygame.Rect(rect.x + 15 + j * 55, rect.y + 130, 50, 20)
+                pygame.draw.rect(self.screen, type_color, type_rect, border_radius=10)
+                pygame.draw.rect(self.screen, BLACK, type_rect, 1, border_radius=10)
+                
+                type_str = ptype[:3].upper()
+                tw, th = self.font_tiny.size(type_str)
+                # Testo senza ombra per maggiore pulizia qui
+                type_text = self.font_tiny.render(type_str, True, WHITE) 
+                self.screen.blit(type_text, (type_rect.centerx - tw // 2, type_rect.centery - th // 2))
         else:
-            # Empty slot
-            plus_text = self.font_title.render("+", True, GRAY)
+            plus_text = self.font_title.render("+", True, LIGHT_GRAY)
             self.screen.blit(plus_text, (rect.centerx - plus_text.get_width() // 2,
                                           rect.centery - plus_text.get_height() // 2))
 
     def draw_popup(self):
-        """Draw the Pokemon selection popup."""
-        # Darken background
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.set_alpha(180)
-        overlay.fill(BLACK)
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
         self.screen.blit(overlay, (0, 0))
 
-        # Title
-        title = self.font_name.render(f"Select Pokemon for Slot {self.current_slot + 1}", True, WHITE)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
+        # Pannello del Pokédex per la selezione
+        panel_rect = pygame.Rect(50, 80, SCREEN_WIDTH - 100, SCREEN_HEIGHT - 160)
+        pygame.draw.rect(self.screen, (220, 40, 40), panel_rect, border_radius=20) # Bordo Rosso Pokedex
+        pygame.draw.rect(self.screen, WHITE, panel_rect.inflate(-16, -16), border_radius=15)
 
-        # Draw options
+        title_str = f"Scegli un Pokémon per lo Slot {self.current_slot + 1}"
+        title_w = self.font_name.size(title_str)[0]
+        self._draw_text_with_shadow(title_str, self.font_name, WHITE, SCREEN_WIDTH // 2 - title_w // 2, 95)
+
         self.selection_rects = []
         start_x = (SCREEN_WIDTH - 3 * CARD_WIDTH) // 2
         for i, p_data in enumerate(self.selection_options):
             x = start_x + i * (CARD_WIDTH + 20)
-            rect = pygame.Rect(x, 180, CARD_WIDTH, CARD_HEIGHT)
+            rect = pygame.Rect(x, 220, CARD_WIDTH, CARD_HEIGHT)
             self.selection_rects.append(rect)
             self.draw_pokemon_card(rect, p_data)
 
     def draw_pokemon_card(self, rect: pygame.Rect, p_data: dict):
-        """Draw a Pokemon selection card."""
-        pygame.draw.rect(self.screen, LIGHT_GRAY, rect)
-        pygame.draw.rect(self.screen, WHITE, rect, 3)
+        # Effetto "Hover/Card"
+        shadow_rect = rect.copy()
+        shadow_rect.x += 5
+        shadow_rect.y += 5
+        pygame.draw.rect(self.screen, GRAY, shadow_rect, border_radius=12)
 
-        # Sprite placeholder
-        sprite_rect = pygame.Rect(rect.x + 50, rect.y + 20, 100, 80)
-        pygame.draw.rect(self.screen, get_type_color(p_data["types"][0]), sprite_rect)
+        pygame.draw.rect(self.screen, LIGHT_GRAY, rect, border_radius=12)
+        pygame.draw.rect(self.screen, UI_BORDER, rect, 3, border_radius=12)
 
-        # Name
-        name = self.font_name.render(p_data["name"], True, BLACK)
-        self.screen.blit(name, (rect.centerx - name.get_width() // 2, rect.y + 110))
+        sprite_rect = pygame.Rect(rect.x + 40, rect.y + 20, 120, 90)
+        pygame.draw.rect(self.screen, get_type_color(p_data["types"][0]), sprite_rect, border_radius=8)
+        pygame.draw.rect(self.screen, WHITE, sprite_rect, 2, border_radius=8)
 
-        # Types
+        name_w = self.font_name.size(p_data["name"])[0]
+        self._draw_text_with_shadow(p_data["name"], self.font_name, BLACK, rect.centerx - name_w // 2, rect.y + 120, shadow_color=WHITE)
+
         for j, ptype in enumerate(p_data["types"]):
             type_color = get_type_color(ptype)
-            type_rect = pygame.Rect(rect.x + 20 + j * 90, rect.y + 140, 80, 25)
-            pygame.draw.rect(self.screen, type_color, type_rect)
-            type_text = self.font_small.render(ptype, True, BLACK)
-            self.screen.blit(type_text, (type_rect.centerx - type_text.get_width() // 2,
-                                          type_rect.centery - type_text.get_height() // 2))
+            type_rect = pygame.Rect(rect.x + 20 + j * 85, rect.y + 155, 75, 24)
+            pygame.draw.rect(self.screen, type_color, type_rect, border_radius=12)
+            pygame.draw.rect(self.screen, UI_BORDER, type_rect, 1, border_radius=12)
+            
+            tw, th = self.font_small.size(ptype)
+            tt = self.font_small.render(ptype, True, WHITE)
+            self.screen.blit(tt, (type_rect.centerx - tw // 2, type_rect.centery - th // 2))
 
-        # BST
         bst = calculate_base_stat_total(p_data)
-        bst_text = self.font_small.render(f"BST: {bst}", True, BLACK)
-        self.screen.blit(bst_text, (rect.centerx - bst_text.get_width() // 2, rect.y + 180))
+        bst_str = f"BST: {bst}"
+        bw = self.font_small.size(bst_str)[0]
+        self._draw_text_with_shadow(bst_str, self.font_small, UI_BORDER, rect.centerx - bw // 2, rect.y + 195, shadow_color=WHITE)
 
-        # Hover hint
-        hint = self.font_tiny.render("Click to select", True, DARK_GRAY)
-        self.screen.blit(hint, (rect.centerx - hint.get_width() // 2, rect.y + 215))
+        hint = self.font_tiny.render("Clicca per scegliere", True, DARK_GRAY)
+        self.screen.blit(hint, (rect.centerx - hint.get_width() // 2, rect.y + 220))
