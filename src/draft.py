@@ -57,6 +57,24 @@ class DraftScreen:
         self.confirm_button = pygame.Rect(SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT - 90, 240, 55)
         self.confirm_clicked = False
 
+        # Sprite cache
+        self.sprite_cache: dict = {}
+
+    def load_sprite(self, pokemon_id: int, size: Tuple[int, int] = (96, 96)) -> Optional[pygame.Surface]:
+        """Carica lo sprite frontale dal percorso locale assets/sprites/."""
+        cache_key = f"{pokemon_id}_front_{size[0]}x{size[1]}"
+        if cache_key in self.sprite_cache:
+            return self.sprite_cache[cache_key]
+        try:
+            path = f"assets/sprites/{pokemon_id:03d}.png"
+            img = pygame.image.load(path).convert_alpha()
+            img = pygame.transform.scale(img, size)
+            self.sprite_cache[cache_key] = img
+        except Exception as e:
+            print(f"Errore sprite ID {pokemon_id}: {e}")
+            self.sprite_cache[cache_key] = None
+        return self.sprite_cache[cache_key]
+
     def _draw_text_with_shadow(self, text: str, font: pygame.font.Font, color: Tuple, x: int, y: int, shadow_color=DARK_GRAY):
         """Disegna il testo con una classica ombra in stile Pokémon."""
         shadow_surf = font.render(text, True, shadow_color)
@@ -195,8 +213,14 @@ class DraftScreen:
         pygame.draw.rect(self.screen, border_color, rect, 4 if highlighted else 2, border_radius=15)
 
         if pokemon:
-            sprite_rect = pygame.Rect(rect.x + 20, rect.y + 15, 100, 80)
-            pygame.draw.rect(self.screen, get_type_color(pokemon.types[0]), sprite_rect, border_radius=8)
+            # Sprite frontale nello slot del team
+            sprite = self.load_sprite(pokemon.id, size=(100, 80))
+            sprite_rect = pygame.Rect(rect.x + 20, rect.y + 10, 100, 80)
+            if sprite:
+                self.screen.blit(sprite, sprite_rect)
+            else:
+                # Fallback: rettangolo colorato se lo sprite non c'è
+                pygame.draw.rect(self.screen, get_type_color(pokemon.types[0]), sprite_rect, border_radius=8)
 
             name_w = self.font_small.size(pokemon.name)[0]
             self._draw_text_with_shadow(pokemon.name, self.font_small, BLACK, 
@@ -251,9 +275,15 @@ class DraftScreen:
         pygame.draw.rect(self.screen, LIGHT_GRAY, rect, border_radius=12)
         pygame.draw.rect(self.screen, UI_BORDER, rect, 3, border_radius=12)
 
-        sprite_rect = pygame.Rect(rect.x + 40, rect.y + 20, 120, 90)
-        pygame.draw.rect(self.screen, get_type_color(p_data["types"][0]), sprite_rect, border_radius=8)
-        pygame.draw.rect(self.screen, WHITE, sprite_rect, 2, border_radius=8)
+        # Sprite frontale nella card del popup
+        sprite = self.load_sprite(p_data["id"], size=(120, 90))
+        sprite_rect = pygame.Rect(rect.x + 40, rect.y + 15, 120, 90)
+        if sprite:
+            self.screen.blit(sprite, sprite_rect)
+        else:
+            # Fallback: rettangolo colorato se lo sprite non c'è
+            pygame.draw.rect(self.screen, get_type_color(p_data["types"][0]), sprite_rect, border_radius=8)
+            pygame.draw.rect(self.screen, WHITE, sprite_rect, 2, border_radius=8)
 
         name_w = self.font_name.size(p_data["name"])[0]
         self._draw_text_with_shadow(p_data["name"], self.font_name, BLACK, rect.centerx - name_w // 2, rect.y + 120, shadow_color=WHITE)
