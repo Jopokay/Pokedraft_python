@@ -1,58 +1,68 @@
-#!/usr/bin/env python3
-"""
-fetch_sprites.py — Download Gen 1 Pokemon sprites from PokeAPI GitHub.
-
-Usage:
-    python fetch_sprites.py
-
-Sprites are saved to assets/sprites/001.png ... 151.png
-Source: https://github.com/PokeAPI/sprites (public domain / free to use)
-"""
-
-import urllib.request
 import os
-import time
+import json
+import urllib.request
 
-SPRITE_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{id}.png"
+# Cartella output
 OUTPUT_DIR = "assets/sprites"
-TOTAL = 151
+
+# File dati Pokémon
+DATA_FILE = "data/pokemon_gen1.json"
+
+# URL PokemonDB (Gen1 Red/Blue)
+FRONT_URL = "https://img.pokemondb.net/sprites/red-blue/normal/{name}.png"
+BACK_URL = "https://img.pokemondb.net/sprites/red-blue/back/{name}.png"
+
+# Nomi speciali che PokemonDB usa diversi
+SPECIAL_NAMES = {
+    "mr. mime": "mr-mime",
+    "farfetch'd": "farfetchd",
+    "nidoran♀": "nidoran-f",
+    "nidoran♂": "nidoran-m"
+}
+
+
+def normalize_name(name):
+    name = name.lower()
+    if name in SPECIAL_NAMES:
+        return SPECIAL_NAMES[name]
+    return name.replace(" ", "-")
 
 
 def fetch_sprites():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    print(f"Downloading {TOTAL} sprites to {OUTPUT_DIR}/")
-    print("Source: github.com/PokeAPI/sprites\n")
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        pokemon_list = json.load(f)
 
-    success = 0
-    failed = []
+    print("Download sprite iniziato...\n")
 
-    for poke_id in range(1, TOTAL + 1):
-        filename = f"{poke_id:03d}.png"
-        filepath = os.path.join(OUTPUT_DIR, filename)
+    for poke in pokemon_list:
+        poke_id = poke["id"]
+        raw_name = poke["name"]
+        name = normalize_name(raw_name)
 
-        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-            print(f"  [{poke_id:3d}/{TOTAL}] {filename} — already exists, skipping")
-            success += 1
-            continue
+        front_filename = f"{poke_id:03d}.png"
+        back_filename = f"{poke_id:03d}_back.png"
 
-        url = SPRITE_URL.format(id=poke_id)
+        front_path = os.path.join(OUTPUT_DIR, front_filename)
+        back_path = os.path.join(OUTPUT_DIR, back_filename)
+
+        front_url = FRONT_URL.format(name=name)
+        back_url = BACK_URL.format(name=name)
+
         try:
-            urllib.request.urlretrieve(url, filepath)
-            size = os.path.getsize(filepath)
-            print(f"  [{poke_id:3d}/{TOTAL}] {filename} — OK ({size} bytes)")
-            success += 1
-            time.sleep(0.05)  # gentle rate limit
-        except Exception as e:
-            print(f"  [{poke_id:3d}/{TOTAL}] {filename} — FAILED: {e}")
-            failed.append(poke_id)
+            urllib.request.urlretrieve(front_url, front_path)
+            print(f"{front_filename} ✔")
+        except Exception:
+            print(f"{front_filename} ✖ (FRONT FAILED: {front_url})")
 
-    print(f"\nDone! {success}/{TOTAL} sprites downloaded.")
-    if failed:
-        print(f"Failed IDs: {failed}")
-        print("Re-run the script to retry failed downloads.")
-    else:
-        print("All sprites downloaded successfully!")
+        try:
+            urllib.request.urlretrieve(back_url, back_path)
+            print(f"{back_filename} ✔")
+        except Exception:
+            print(f"{back_filename} ✖ (BACK FAILED: {back_url})")
+
+    print("\nDownload completato!")
 
 
 if __name__ == "__main__":
