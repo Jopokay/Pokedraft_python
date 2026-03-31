@@ -5,17 +5,19 @@ from pokemon import Pokemon
 from battle import BattleEngine
 from utils import get_type_color
 
-
+# Colori UI Aggiornati per stile Lotta
 WHITE      = (255, 255, 255)
 BLACK      = (0,   0,   0  )
 GRAY       = (128, 128, 128)
 DARK_GRAY  = (64,  64,  64 )
-LIGHT_GRAY = (200, 200, 200)
-BLUE       = (100, 100, 255)
-GREEN      = (50,  200, 50 )
-RED        = (200, 50,  50 )
-YELLOW     = (255, 255, 0  )
-BG_COLOR   = (20,  24,  40 )   # dark navy background
+LIGHT_GRAY = (240, 240, 240)
+BLUE       = (100, 140, 255)
+GREEN      = (60,  220, 100)
+RED        = (220, 60,  60 )
+YELLOW     = (250, 200, 50 )
+BG_SKY     = (160, 200, 230)   # Cielo sereno
+BG_GROUND  = (120, 180, 120)   # Terreno erboso
+PANEL_BORDER= (40, 40, 50)
 
 SCREEN_WIDTH  = 1024
 SCREEN_HEIGHT = 768
@@ -26,24 +28,27 @@ class BattleUI:
                  player_team: List[Pokemon], ai_team: List[Pokemon]):
         self.screen = screen
         self.font_title = pygame.font.Font(None, 48)
-        self.font_name  = pygame.font.Font(None, 28)
-        self.font_small = pygame.font.Font(None, 22)
-        self.font_tiny  = pygame.font.Font(None, 18)
+        self.font_name  = pygame.font.Font(None, 32)
+        self.font_small = pygame.font.Font(None, 24)
+        self.font_tiny  = pygame.font.Font(None, 20)
 
         self.engine = BattleEngine(player_team, ai_team)
         self.selected_move  = 0
-        self.turn_delay     = 0   # frames to wait before accepting input
+        self.turn_delay     = 0   
         self.game_over      = False
         self.winner         = None
 
-        # Faint flash state
-        self.faint_flash_side   : Optional[str] = None   # "player" or "ai"
+        self.faint_flash_side   : Optional[str] = None
         self.faint_flash_frames : int = 0
-        self.FAINT_FLASH_TOTAL  : int = 40   # ~0.66 s at 60 fps
+        self.FAINT_FLASH_TOTAL  : int = 40
 
         self.sprite_cache: dict = {}
 
-    # ── sprite loading ───────────────────────────────────────────────────
+    def _draw_text_with_shadow(self, text: str, font: pygame.font.Font, color: tuple, x: int, y: int, shadow_col=DARK_GRAY):
+        shadow_surf = font.render(text, True, shadow_col)
+        text_surf = font.render(text, True, color)
+        self.screen.blit(shadow_surf, (x + 2, y + 2))
+        self.screen.blit(text_surf, (x, y))
 
     def load_sprite(self, pokemon: Pokemon) -> Optional[pygame.Surface]:
         if pokemon.id in self.sprite_cache:
@@ -51,13 +56,12 @@ class BattleUI:
         path = f"assets/sprites/{pokemon.id:03d}.png"
         try:
             img = pygame.image.load(path).convert_alpha()
-            img = pygame.transform.scale(img, (120, 120))
+            # Sprites leggermente più grandi in battaglia per maggiore impatto
+            img = pygame.transform.scale(img, (160, 160)) 
             self.sprite_cache[pokemon.id] = img
         except Exception:
             self.sprite_cache[pokemon.id] = None
         return self.sprite_cache[pokemon.id]
-
-    # ── main loop ────────────────────────────────────────────────────────
 
     def run(self) -> str:
         clock = pygame.time.Clock()
@@ -75,7 +79,6 @@ class BattleUI:
                     elif event.key == pygame.K_3: self.selected_move = 2
                     elif event.key == pygame.K_4: self.selected_move = 3
 
-                # Accept click only when not animating and not waiting
                 if (event.type == pygame.MOUSEBUTTONDOWN
                         and not self.game_over
                         and self.turn_delay == 0
@@ -87,11 +90,9 @@ class BattleUI:
                             self._execute_turn()
                             break
 
-            # Faint flash countdown
             if self.faint_flash_frames > 0:
                 self.faint_flash_frames -= 1
 
-            # Turn delay countdown (post-turn pause)
             if self.turn_delay > 0 and self.faint_flash_frames == 0:
                 self.turn_delay -= 1
 
@@ -99,8 +100,6 @@ class BattleUI:
 
             if self.game_over:
                 return self._game_over_screen(clock)
-
-    # ── turn execution ───────────────────────────────────────────────────
 
     def _execute_turn(self):
         s = self.engine.state
@@ -113,15 +112,12 @@ class BattleUI:
         ai_move     = self.engine.get_ai_move()
         ai_move_idx = ai.moves.index(ai_move) if ai_move in ai.moves else 0
 
-        # Remember who was active before the turn
         prev_player_active = s.player_active
         prev_ai_active     = s.ai_active
 
         self.engine.process_turn(self.selected_move, ai_move_idx)
 
-        # Did anyone faint and switch?
         if s.player_active != prev_player_active:
-            # Player pokemon fainted → flash the old slot position
             self.faint_flash_side   = "player"
             self.faint_flash_frames = self.FAINT_FLASH_TOTAL
 
@@ -133,43 +129,43 @@ class BattleUI:
             self.game_over = True
             self.winner    = s.winner
         else:
-            self.turn_delay = 20   # ~0.33 s pause between turns
-
-    # ── drawing ──────────────────────────────────────────────────────────
+            self.turn_delay = 20
 
     def _draw(self):
-        self.screen.fill(BG_COLOR)
+        # Sfondo Arena Classico
+        self.screen.fill(BG_SKY)
+        pygame.draw.rect(self.screen, BG_GROUND, (0, SCREEN_HEIGHT // 2, SCREEN_WIDTH, SCREEN_HEIGHT // 2))
+        
+        # Piattaforme ellittiche sotto ai Pokémon
+        pygame.draw.ellipse(self.screen, (90, 140, 90), (SCREEN_WIDTH - 280, 150, 240, 70))  # AI
+        pygame.draw.ellipse(self.screen, (90, 140, 90), (50, SCREEN_HEIGHT - 220, 280, 80))   # Giocatore
 
         s  = self.engine.state
         ai = s.get_ai_pokemon()
         pl = s.get_player_pokemon()
 
-        # Opponent pokemon — top right
-        self._draw_sprite(ai,  SCREEN_WIDTH - 210, 55,  faint_side="ai")
-        self._draw_hp_bar(ai,  40, 55, 280, 32)
+        self._draw_sprite(ai,  SCREEN_WIDTH - 240, 30,  faint_side="ai")
+        self._draw_hp_bar(ai,  40, 55, 300, 60, is_player=False)
 
-        # Player pokemon — bottom left
-        self._draw_sprite(pl, 90, SCREEN_HEIGHT - 280, faint_side="player")
-        self._draw_hp_bar(pl, 310, SCREEN_HEIGHT - 295, 330, 36)
+        self._draw_sprite(pl, 110, SCREEN_HEIGHT - 320, faint_side="player")
+        self._draw_hp_bar(pl, 350, SCREEN_HEIGHT - 330, 340, 70, is_player=True)
 
         self._draw_move_buttons(pl)
         self._draw_battle_log()
         self._draw_team_dots()
 
-        turn_surf = self.font_small.render(f"Turn {s.turn}", True, GRAY)
-        self.screen.blit(turn_surf, (SCREEN_WIDTH // 2 - turn_surf.get_width() // 2, 8))
+        turn_str = f"Turno {s.turn}"
+        tw = self.font_small.size(turn_str)[0]
+        self._draw_text_with_shadow(turn_str, self.font_small, WHITE, SCREEN_WIDTH // 2 - tw // 2, 10, shadow_col=BLACK)
 
-        # "Waiting…" hint during delay
         if self.turn_delay > 0:
-            hint = self.font_tiny.render("…", True, GRAY)
-            self.screen.blit(hint, (SCREEN_WIDTH - 255, 555))
+            hint = self.font_tiny.render("Attendere…", True, BLACK)
+            self.screen.blit(hint, (SCREEN_WIDTH - 250, 545))
 
         pygame.display.flip()
 
     def _draw_sprite(self, pokemon: Pokemon, x: int, y: int, faint_side: str):
         sprite = self.load_sprite(pokemon)
-
-        # Flash white when this side just fainted
         flashing = (self.faint_flash_side == faint_side
                     and self.faint_flash_frames > 0
                     and self.faint_flash_frames % 8 < 4)
@@ -182,113 +178,135 @@ class BattleUI:
                 surf.blit(white_overlay, (0, 0))
             self.screen.blit(surf, (x, y))
         else:
-            color = (255, 255, 255) if flashing else get_type_color(pokemon.types[0])
-            pygame.draw.rect(self.screen, color, (x, y, 120, 120))
+            color = WHITE if flashing else get_type_color(pokemon.types[0])
+            rect = pygame.Rect(x, y + 20, 120, 120)
+            pygame.draw.rect(self.screen, color, rect, border_radius=10)
+            pygame.draw.rect(self.screen, PANEL_BORDER, rect, 3, border_radius=10)
             if not flashing:
-                letter = self.font_title.render(pokemon.name[0], True, WHITE)
-                self.screen.blit(letter, (x + 60 - letter.get_width() // 2,
-                                          y + 60 - letter.get_height() // 2))
+                self._draw_text_with_shadow(pokemon.name[0], self.font_title, WHITE, x + 45, y + 65)
 
-    def _draw_hp_bar(self, pokemon: Pokemon, x: int, y: int, width: int, height: int):
+    def _draw_hp_bar(self, pokemon: Pokemon, x: int, y: int, width: int, height: int, is_player: bool):
         max_hp = pokemon.get_max_hp()
         cur_hp = max(0, pokemon.current_hp)
         pct    = cur_hp / max_hp if max_hp > 0 else 0
 
-        name_surf = self.font_name.render(pokemon.name, True, WHITE)
-        self.screen.blit(name_surf, (x, y - 28))
+        # Sfondo Pannello HP con smussatura classica
+        panel_rect = pygame.Rect(x, y, width, height)
+        # Ombra
+        pygame.draw.rect(self.screen, DARK_GRAY, panel_rect.move(4, 4), border_radius=15)
+        # Sfondo
+        pygame.draw.rect(self.screen, LIGHT_GRAY, panel_rect, border_radius=15)
+        # Bordo
+        pygame.draw.rect(self.screen, PANEL_BORDER, panel_rect, 3, border_radius=15)
+
+        self._draw_text_with_shadow(pokemon.name, self.font_name, BLACK, x + 15, y + 10, shadow_col=WHITE)
 
         # Status badge
         if pokemon.status:
             badge_colors = {
-                "burned":    (255, 90,  0  ),
-                "poisoned":  (160, 0,   160),
-                "paralyzed": (230, 200, 0  ),
-                "sleep":     (80,  80,  180),
-                "frozen":    (80,  200, 255),
+                "burned":    (250, 100, 50 ),
+                "poisoned":  (160, 60,  160),
+                "paralyzed": (240, 200, 30 ),
+                "sleep":     (140, 140, 200),
+                "frozen":    (100, 210, 250),
             }
             bc = badge_colors.get(pokemon.status, GRAY)
-            bx = x + name_surf.get_width() + 8
-            pygame.draw.rect(self.screen, bc, (bx, y - 26, 34, 18))
+            bx = x + width - 60
+            pygame.draw.rect(self.screen, bc, (bx, y + 10, 45, 22), border_radius=8)
+            pygame.draw.rect(self.screen, BLACK, (bx, y + 10, 45, 22), 1, border_radius=8)
+            
             bs = self.font_tiny.render(pokemon.status[:3].upper(), True, WHITE)
-            self.screen.blit(bs, (bx + 2, y - 25))
+            self.screen.blit(bs, (bx + 6, y + 14))
 
-        pygame.draw.rect(self.screen, DARK_GRAY, (x, y, width, height))
-        bar_w = int((width - 4) * pct)
-        if bar_w > 0:
+        # Contenitore Barra HP
+        bar_x, bar_y = x + 40, y + 38 if not is_player else y + 42
+        bar_w, bar_h = width - 60, 10
+        
+        # Simbolo "HP"
+        hp_sym = self.font_tiny.render("HP", True, (220, 200, 50))
+        self.screen.blit(hp_sym, (bar_x - 25, bar_y - 2))
+
+        pygame.draw.rect(self.screen, DARK_GRAY, (bar_x, bar_y, bar_w, bar_h), border_radius=5)
+        
+        fill_w = int((bar_w) * pct)
+        if fill_w > 0:
             hp_col = GREEN if pct > 0.5 else YELLOW if pct > 0.2 else RED
-            pygame.draw.rect(self.screen, hp_col, (x + 2, y + 2, bar_w, height - 4))
-        pygame.draw.rect(self.screen, WHITE, (x, y, width, height), 2)
+            pygame.draw.rect(self.screen, hp_col, (bar_x, bar_y, fill_w, bar_h), border_radius=5)
+        
+        pygame.draw.rect(self.screen, PANEL_BORDER, (bar_x, bar_y, bar_w, bar_h), 2, border_radius=5)
 
-        hp_txt = self.font_small.render(f"{cur_hp}/{max_hp}", True, WHITE)
-        self.screen.blit(hp_txt, (x + width + 10,
-                                   y + height // 2 - hp_txt.get_height() // 2))
+        # Solo il player mostra i numeri degli HP tipicamente
+        if is_player:
+            hp_txt = f"{cur_hp} / {max_hp}"
+            self._draw_text_with_shadow(hp_txt, self.font_small, BLACK, x + 40, y + 55, shadow_col=WHITE)
 
     def _draw_move_buttons(self, pokemon: Pokemon):
         x, y = SCREEN_WIDTH - 255, 555
-        hdr = self.font_name.render("Choose move:", True, WHITE)
-        self.screen.blit(hdr, (x, y - 28))
+        self._draw_text_with_shadow("Seleziona mossa:", self.font_name, WHITE, x, y - 35, shadow_col=BLACK)
 
         for i, move in enumerate(pokemon.moves[:4]):
             btn = pygame.Rect(x, y + i * 48, 240, 42)
             col = get_type_color(move.type)
 
-            # Highlight selected
+            if move.pp == 0: col = DARK_GRAY
+
+            # Ombra pulsante
+            pygame.draw.rect(self.screen, DARK_GRAY, btn.move(2, 2), border_radius=8)
+            pygame.draw.rect(self.screen, LIGHT_GRAY, btn, border_radius=8)
+            pygame.draw.rect(self.screen, col, btn.inflate(-6, -6), border_radius=6)
+            
             if i == self.selected_move:
-                pygame.draw.rect(self.screen, YELLOW, btn.inflate(6, 6), 3)
+                pygame.draw.rect(self.screen, RED, btn, 3, border_radius=8)
+            else:
+                pygame.draw.rect(self.screen, PANEL_BORDER, btn, 2, border_radius=8)
 
-            # Grey-out if no PP
-            if move.pp == 0:
-                col = DARK_GRAY
+            self._draw_text_with_shadow(move.name[:18], self.font_small, WHITE, x + 12, y + i * 48 + 12)
 
-            pygame.draw.rect(self.screen, col, btn)
-            pygame.draw.rect(self.screen, WHITE, btn, 2)
-
-            name_s = self.font_small.render(move.name[:18], True, BLACK)
-            self.screen.blit(name_s, (x + 8, y + i * 48 + 12))
-
-            pp_s = self.font_tiny.render(f"PP {move.pp}", True, DARK_GRAY)
-            self.screen.blit(pp_s, (x + 183, y + i * 48 + 15))
-
-            key_s = self.font_tiny.render(f"[{i+1}]", True, DARK_GRAY)
-            self.screen.blit(key_s, (x + 218, y + i * 48 + 15))
+            pp_str = f"PP {move.pp}"
+            self._draw_text_with_shadow(pp_str, self.font_tiny, WHITE, x + 183, y + i * 48 + 14)
 
     def _draw_battle_log(self):
-        log_rect = pygame.Rect(40, 420, 450, 155)
-        pygame.draw.rect(self.screen, (30, 30, 50), log_rect)
-        pygame.draw.rect(self.screen, (80, 80, 120), log_rect, 2)
-
-        hdr = self.font_small.render("Battle Log", True, GRAY)
-        self.screen.blit(hdr, (50, 425))
+        # Finestra di dialogo in basso a sinistra classica
+        log_rect = pygame.Rect(20, 540, 720, 200)
+        
+        # Bordo doppio tipico Pokémon
+        pygame.draw.rect(self.screen, PANEL_BORDER, log_rect, border_radius=12)
+        pygame.draw.rect(self.screen, WHITE, log_rect.inflate(-8, -8), border_radius=10)
+        pygame.draw.rect(self.screen, (200, 50, 50), log_rect.inflate(-16, -16), 2, border_radius=8)
 
         for i, msg in enumerate(self.engine.state.battle_log[-6:]):
-            alpha = 180 + int(75 * i / 5)   # older lines slightly dimmer
-            col = (alpha, alpha, alpha)
-            txt = self.font_tiny.render(msg[:62], True, col)
-            self.screen.blit(txt, (50, 445 + i * 22))
+            col = BLACK if i == 5 else DARK_GRAY # L'ultimo messaggio è più scuro
+            txt = self.font_small.render(msg[:70], True, col)
+            self.screen.blit(txt, (40, 555 + i * 28))
 
     def _draw_team_dots(self):
         s = self.engine.state
+        
+        # Sfondo per i dots
+        pygame.draw.rect(self.screen, (0,0,0,100), (20, SCREEN_HEIGHT - 35, 160, 25), border_radius=12)
+        pygame.draw.rect(self.screen, (0,0,0,100), (SCREEN_WIDTH - 180, 15, 160, 25), border_radius=12)
+
         for i, p in enumerate(s.player_team):
             col = GREEN if not p.is_fainted() else RED
-            cx  = 42 + i * 22
-            cy  = SCREEN_HEIGHT - 14
+            cx  = 35 + i * 24
+            cy  = SCREEN_HEIGHT - 22
             pygame.draw.circle(self.screen, col, (cx, cy), 8)
+            pygame.draw.circle(self.screen, BLACK, (cx, cy), 8, 1)
             if i == s.player_active:
                 pygame.draw.circle(self.screen, WHITE, (cx, cy), 8, 2)
 
         for i, p in enumerate(s.ai_team):
             col = GREEN if not p.is_fainted() else RED
-            cx  = SCREEN_WIDTH - 42 - i * 22
-            cy  = 14
+            cx  = SCREEN_WIDTH - 35 - i * 24
+            cy  = 27
             pygame.draw.circle(self.screen, col, (cx, cy), 8)
+            pygame.draw.circle(self.screen, BLACK, (cx, cy), 8, 1)
             if i == s.ai_active:
                 pygame.draw.circle(self.screen, WHITE, (cx, cy), 8, 2)
 
-    # ── game over ────────────────────────────────────────────────────────
-
     def _game_over_screen(self, clock) -> str:
-        pa_btn   = pygame.Rect(SCREEN_WIDTH // 2 - 205, SCREEN_HEIGHT // 2 + 20, 190, 60)
-        quit_btn = pygame.Rect(SCREEN_WIDTH // 2 +  15, SCREEN_HEIGHT // 2 + 20, 190, 60)
+        pa_btn   = pygame.Rect(SCREEN_WIDTH // 2 - 210, SCREEN_HEIGHT // 2 + 40, 200, 60)
+        quit_btn = pygame.Rect(SCREEN_WIDTH // 2 +  10, SCREEN_HEIGHT // 2 + 40, 200, 60)
 
         while True:
             clock.tick(60)
@@ -296,30 +314,29 @@ class BattleUI:
                 if event.type == pygame.QUIT:
                     return "quit"
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if pa_btn.collidepoint(event.pos):
-                        return "play_again"
-                    if quit_btn.collidepoint(event.pos):
-                        return "quit"
+                    if pa_btn.collidepoint(event.pos): return "play_again"
+                    if quit_btn.collidepoint(event.pos): return "quit"
 
-            self.screen.fill(BLACK)
+            # Overlay scuro sulla battaglia finita
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 200))
+            self.screen.blit(overlay, (0, 0))
 
             if self.winner == "player":
-                msg = self.font_title.render("VICTORY!", True, GREEN)
+                msg = "VITTORIA!"
+                col = (100, 255, 100)
             else:
-                msg = self.font_title.render("DEFEAT!", True, RED)
-            self.screen.blit(msg, (SCREEN_WIDTH // 2 - msg.get_width() // 2,
-                                    SCREEN_HEIGHT // 2 - 80))
+                msg = "SCONFITTA!"
+                col = (255, 100, 100)
+                
+            mw = self.font_title.size(msg)[0]
+            self._draw_text_with_shadow(msg, self.font_title, col, SCREEN_WIDTH // 2 - mw // 2, SCREEN_HEIGHT // 2 - 80)
 
-            pygame.draw.rect(self.screen, GREEN, pa_btn)
-            pygame.draw.rect(self.screen, WHITE, pa_btn, 2)
-            pa_t = self.font_name.render("Play Again", True, WHITE)
-            self.screen.blit(pa_t, (pa_btn.centerx - pa_t.get_width() // 2,
-                                     pa_btn.centery - pa_t.get_height() // 2))
-
-            pygame.draw.rect(self.screen, RED, quit_btn)
-            pygame.draw.rect(self.screen, WHITE, quit_btn, 2)
-            q_t = self.font_name.render("Quit", True, WHITE)
-            self.screen.blit(q_t, (quit_btn.centerx - q_t.get_width() // 2,
-                                    quit_btn.centery - q_t.get_height() // 2))
+            for btn, testo, b_col in [(pa_btn, "Rigioca", GREEN), (quit_btn, "Esci", RED)]:
+                pygame.draw.rect(self.screen, DARK_GRAY, btn.move(4, 4), border_radius=12)
+                pygame.draw.rect(self.screen, b_col, btn, border_radius=12)
+                pygame.draw.rect(self.screen, WHITE, btn, 3, border_radius=12)
+                tw, th = self.font_name.size(testo)
+                self._draw_text_with_shadow(testo, self.font_name, WHITE, btn.centerx - tw // 2, btn.centery - th // 2)
 
             pygame.display.flip()
