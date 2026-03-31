@@ -66,7 +66,11 @@ def generate_ai_team() -> List[Pokemon]:
 
 
 def main():
+    # Pre-inizializza il mixer PRIMA di pygame.init() per garantire
+    # la qualità audio corretta (44100 Hz, 16-bit, stereo, buffer piccolo)
+    pygame.mixer.pre_init(frequency=44100, size=-16, channels=2, buffer=512)
     pygame.init()
+
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Pokemon Draft")
     clock = pygame.time.Clock()
