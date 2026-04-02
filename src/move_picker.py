@@ -5,195 +5,236 @@ from typing import List, Dict
 from pokemon import Pokemon, Move
 from utils import get_type_color, format_stat_name
 
+# ── Palette condivisa stile Pokémon ──────────────────────────────────────────
+WHITE      = (255, 255, 255)
+BLACK      = (0,   0,   0  )
+GRAY       = (140, 140, 140)
+DARK_GRAY  = (60,  60,  60 )
+CREAM      = (248, 248, 224)
+GOLD       = (248, 208, 48 )
+GREEN      = (72,  200, 88 )
+RED        = (220, 56,  56 )
+BLUE_PILL  = (64,  120, 200)
 
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-GRAY = (128, 128, 128)
-DARK_GRAY = (64, 64, 64)
-LIGHT_GRAY = (200, 200, 200)
-BLUE = (100, 100, 255)
-GREEN = (50, 200, 50)
-YELLOW = (255, 255, 0)
+# Sfondo navy Pokémon
+BG_DARK    = (22,  32,  62 )   # navy scuro
+BG_MED     = (30,  44,  88 )   # navy medio
+HEADER_BG  = (16,  24,  50 )   # header strip
+CARD_BG    = (248, 248, 228)   # card crema
+CARD_BDR   = (60,  72,  44 )   # bordo oliva
 
-SCREEN_WIDTH = 1024
+SCREEN_WIDTH  = 1024
 SCREEN_HEIGHT = 768
-CARD_WIDTH = 220
-CARD_HEIGHT = 200
+CARD_WIDTH    = 220
+CARD_HEIGHT   = 210
+
+
+def draw_poke_bg(screen: pygame.Surface):
+    """Sfondo navy stile Pokémon con pokéball decorative."""
+    # Gradiente verticale navy
+    for y in range(SCREEN_HEIGHT):
+        r_ratio = y / SCREEN_HEIGHT
+        r = int(BG_DARK[0] + r_ratio * (BG_MED[0] - BG_DARK[0]))
+        g = int(BG_DARK[1] + r_ratio * (BG_MED[1] - BG_DARK[1]))
+        b = int(BG_DARK[2] + r_ratio * (BG_MED[2] - BG_DARK[2]))
+        pygame.draw.line(screen, (r, g, b), (0, y), (SCREEN_WIDTH, y))
+
+    # Pokéball silhouette decorativa (4 angoli)
+    surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    for cx, cy in [(90,90),(SCREEN_WIDTH-90,90),(90,SCREEN_HEIGHT-90),(SCREEN_WIDTH-90,SCREEN_HEIGHT-90)]:
+        pygame.draw.circle(surf, (255, 255, 255, 18), (cx, cy), 74, 7)
+        pygame.draw.line(surf, (255, 255, 255, 18), (cx-74, cy), (cx+74, cy), 7)
+        pygame.draw.circle(surf, (255, 255, 255, 18), (cx, cy), 22, 7)
+    screen.blit(surf, (0, 0))
+
+    # Header strip
+    pygame.draw.rect(screen, HEADER_BG, (0, 0, SCREEN_WIDTH, 76))
+    pygame.draw.rect(screen, GOLD, (0, 74, SCREEN_WIDTH, 4))
 
 
 class MovePicker:
     def __init__(self, screen: pygame.Surface, team: List[Pokemon]):
         self.screen = screen
-        self.font_title = pygame.font.Font(None, 48)
-        self.font_name = pygame.font.Font(None, 28)
-        self.font_small = pygame.font.Font(None, 22)
-        self.font_tiny = pygame.font.Font(None, 18)
+        self.font_title = pygame.font.Font(None, 50)
+        self.font_name  = pygame.font.Font(None, 30)
+        self.font_small = pygame.font.Font(None, 23)
+        self.font_tiny  = pygame.font.Font(None, 19)
 
         self.team = team
         self.current_pokemon_index = 0
-        self.current_move_index = 0
+        self.current_move_index    = 0
 
-        # FIX: save the full learnable pool per pokemon, then reset pokemon.moves to []
-        # The draft loaded all learnable moves into pokemon.moves; we save them here
-        # and let the player pick 4 interactively.
         self.available_pool: Dict[int, List[Move]] = {}
         for i, pokemon in enumerate(team):
             self.available_pool[i] = list(pokemon.moves)
-            pokemon.moves = []  # reset - will be filled by picker
+            pokemon.moves = []
 
         self.selection_options: List[Move] = []
         self.selection_rects: List[pygame.Rect] = []
-
         self.generate_options()
 
     def run(self):
-        running = True
         clock = pygame.time.Clock()
-
+        running = True
         while running:
             clock.tick(60)
-
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    running = False
                     return
-
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    pos = event.pos
                     for i, rect in enumerate(self.selection_rects):
-                        if rect.collidepoint(pos):
+                        if rect.collidepoint(event.pos):
                             self.select_move(i)
                             break
-
             self.draw()
-
             if self.current_pokemon_index >= len(self.team):
                 running = False
 
     def generate_options(self):
-        """Generate 3 random move options from the pool not yet selected."""
         if self.current_pokemon_index >= len(self.team):
             return
-
         pokemon = self.team[self.current_pokemon_index]
         pool = self.available_pool[self.current_pokemon_index]
-
-        # FIX: compare pool moves against already-selected moves (not pool vs itself)
         selected_ids = {m.id for m in pokemon.moves}
         available = [m for m in pool if m.id not in selected_ids]
-
         if len(available) >= 3:
             self.selection_options = random.sample(available, 3)
         elif available:
             self.selection_options = available[:]
         else:
-            # Fallback: reuse from pool if somehow empty
             self.selection_options = random.sample(pool, min(3, len(pool)))
-
         self.selection_rects = []
 
-    def select_move(self, option_index: int):
-        if 0 <= option_index < len(self.selection_options):
-            move = self.selection_options[option_index]
+    def select_move(self, idx: int):
+        if 0 <= idx < len(self.selection_options):
+            move = self.selection_options[idx]
             self.team[self.current_pokemon_index].moves.append(move)
             self.current_move_index += 1
-
             if len(self.team[self.current_pokemon_index].moves) >= 4:
                 self.current_pokemon_index += 1
                 self.current_move_index = 0
-
             if self.current_pokemon_index < len(self.team):
                 self.generate_options()
 
     def draw(self):
-        self.screen.fill(BLACK)
+        draw_poke_bg(self.screen)
 
-        title = self.font_title.render("Select Moves", True, WHITE)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 30))
+        # Titolo nell'header
+        title = self.font_title.render("Selezione Mosse", True, WHITE)
+        self.screen.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 16))
 
         if self.current_pokemon_index >= len(self.team):
             return
 
         pokemon = self.team[self.current_pokemon_index]
 
-        name = self.font_name.render(
-            f"{pokemon.name} - Move {self.current_move_index + 1}/4", True, WHITE)
-        self.screen.blit(name, (SCREEN_WIDTH // 2 - name.get_width() // 2, 100))
+        # Sottotitolo
+        sub = self.font_name.render(
+            f"{pokemon.name}  —  Mossa {self.current_move_index + 1} / 4", True, GOLD)
+        self.screen.blit(sub, (SCREEN_WIDTH//2 - sub.get_width()//2, 92))
 
-        moves_label = self.font_small.render("Current Moves:", True, GRAY)
-        self.screen.blit(moves_label, (50, 160))
+        # Slot mosse già scelte
+        slot_y = 124
+        total_w = 4 * 218 + 3 * 8
+        start_x = (SCREEN_WIDTH - total_w) // 2
+        lbl = self.font_tiny.render("Mosse selezionate:", True, (180, 190, 220))
+        self.screen.blit(lbl, (start_x, slot_y))
 
         for i in range(4):
             move = pokemon.moves[i] if i < len(pokemon.moves) else None
-            slot_rect = pygame.Rect(50 + i * 235, 190, 215, 50)
+            sx   = start_x + i * 226
+            sy   = slot_y + 22
+            slot = pygame.Rect(sx, sy, 218, 44)
 
-            color = GREEN if move else DARK_GRAY
-            pygame.draw.rect(self.screen, color, slot_rect)
-            pygame.draw.rect(self.screen, WHITE, slot_rect, 2)
+            # Sfondo slot
+            col = get_type_color(move.type) if move else (50, 62, 100)
+            pygame.draw.rect(self.screen, (30, 30, 30), slot.move(3, 3), border_radius=8)
+            pygame.draw.rect(self.screen, col, slot, border_radius=8)
+            pygame.draw.rect(self.screen, WHITE if move else GRAY, slot, 2, border_radius=8)
 
             if move:
-                move_name = self.font_small.render(move.name[:14], True, WHITE)
-                self.screen.blit(move_name, (slot_rect.centerx - move_name.get_width() // 2,
-                                              slot_rect.centery - move_name.get_height() // 2))
+                mn = self.font_small.render(move.name[:14], True, WHITE)
+                self.screen.blit(mn, (slot.centerx - mn.get_width()//2,
+                                      slot.centery - mn.get_height()//2))
             else:
-                plus_text = self.font_name.render("+", True, GRAY)
-                self.screen.blit(plus_text, (slot_rect.centerx - plus_text.get_width() // 2,
-                                              slot_rect.centery - plus_text.get_height() // 2))
+                plus = self.font_name.render("+", True, GRAY)
+                self.screen.blit(plus, (slot.centerx - plus.get_width()//2,
+                                        slot.centery - plus.get_height()//2))
 
-        options_label = self.font_small.render("Select a move:", True, WHITE)
-        self.screen.blit(options_label, (SCREEN_WIDTH // 2 - options_label.get_width() // 2, 280))
+        # Divider
+        pygame.draw.rect(self.screen, GOLD, (40, 196, SCREEN_WIDTH - 80, 2))
+
+        # Label scegli
+        sel_lbl = self.font_small.render("Scegli una mossa:", True, (200, 210, 240))
+        self.screen.blit(sel_lbl, (SCREEN_WIDTH//2 - sel_lbl.get_width()//2, 206))
 
         self.draw_move_options()
         pygame.display.flip()
 
     def draw_move_options(self):
-        # FIX: clear rects each frame to avoid infinite accumulation
         self.selection_rects = []
-        start_x = (SCREEN_WIDTH - 3 * CARD_WIDTH) // 2 - 20
+        total_w = 3 * CARD_WIDTH + 2 * 24
+        start_x = (SCREEN_WIDTH - total_w) // 2
 
         for i, move in enumerate(self.selection_options):
-            x = start_x + i * (CARD_WIDTH + 30)
-            rect = pygame.Rect(x, 330, CARD_WIDTH, CARD_HEIGHT)
+            x    = start_x + i * (CARD_WIDTH + 24)
+            rect = pygame.Rect(x, 230, CARD_WIDTH, CARD_HEIGHT)
             self.selection_rects.append(rect)
-            self.draw_move_card(rect, move)
+            self._draw_move_card(rect, move)
 
-    def draw_move_card(self, rect: pygame.Rect, move: Move):
-        pygame.draw.rect(self.screen, LIGHT_GRAY, rect)
-        pygame.draw.rect(self.screen, WHITE, rect, 3)
+    def _draw_move_card(self, rect: pygame.Rect, move: Move):
+        type_col = get_type_color(move.type)
 
-        type_color = get_type_color(move.type)
-        type_rect = pygame.Rect(rect.x + 10, rect.y + 10, 70, 25)
-        pygame.draw.rect(self.screen, type_color, type_rect)
-        type_text = self.font_small.render(move.type[:8], True, BLACK)
-        self.screen.blit(type_text, (type_rect.centerx - type_text.get_width() // 2,
-                                       type_rect.centery - type_text.get_height() // 2))
+        # Ombra
+        pygame.draw.rect(self.screen, (10, 15, 35),
+                         rect.move(5, 5), border_radius=14)
+        # Card background
+        pygame.draw.rect(self.screen, CARD_BG, rect, border_radius=14)
+        # Striscia superiore colorata per tipo
+        stripe = pygame.Rect(rect.x, rect.y, rect.width, 36)
+        pygame.draw.rect(self.screen, type_col, stripe, border_radius=14)
+        # Ricopri angoli inferiori della striscia per non arrotondarli
+        pygame.draw.rect(self.screen, type_col,
+                         pygame.Rect(rect.x, rect.y + 22, rect.width, 14))
+        # Bordo
+        pygame.draw.rect(self.screen, CARD_BDR, rect, 3, border_radius=14)
 
-        cat_color = GREEN if move.category == "Physical" else BLUE if move.category == "Special" else GRAY
-        cat_rect = pygame.Rect(rect.x + 90, rect.y + 10, 80, 25)
-        pygame.draw.rect(self.screen, cat_color, cat_rect)
-        cat_text = self.font_small.render(move.category[:4], True, WHITE)
-        self.screen.blit(cat_text, (cat_rect.centerx - cat_text.get_width() // 2,
-                                      cat_rect.centery - cat_text.get_height() // 2))
+        # Tipo + Categoria
+        type_txt = self.font_small.render(move.type.upper(), True, WHITE)
+        self.screen.blit(type_txt, (rect.x + 10, rect.y + 10))
 
-        name = self.font_name.render(move.name[:16], True, BLACK)
-        self.screen.blit(name, (rect.centerx - name.get_width() // 2, rect.y + 50))
+        CAT_COLORS = {"Physical":(220,80,40),"Special":(60,120,220),"Status":(120,100,160)}
+        cat_col = CAT_COLORS.get(move.category, GRAY)
+        cat_pill = pygame.Rect(rect.right - 72, rect.y + 8, 64, 20)
+        pygame.draw.rect(self.screen, cat_col, cat_pill, border_radius=8)
+        cat_txt = self.font_tiny.render(move.category[:4].upper(), True, WHITE)
+        self.screen.blit(cat_txt, (cat_pill.centerx - cat_txt.get_width()//2,
+                                   cat_pill.centery - cat_txt.get_height()//2))
 
-        y_offset = 85
-        power_text = self.font_small.render(
-            f"Power: {move.power}" if move.power > 0 else "Power: --", True, BLACK)
-        self.screen.blit(power_text, (rect.x + 20, rect.y + y_offset))
+        # Nome mossa
+        name_surf = self.font_name.render(move.name[:16], True, BLACK)
+        self.screen.blit(name_surf, (rect.centerx - name_surf.get_width()//2, rect.y + 46))
 
-        y_offset += 25
-        acc_text = self.font_small.render(f"Accuracy: {move.accuracy}%", True, BLACK)
-        self.screen.blit(acc_text, (rect.x + 20, rect.y + y_offset))
+        # Stats
+        y = rect.y + 80
+        for label, value in [
+            ("Potenza", f"{move.power}" if move.power > 0 else "—"),
+            ("Precisione", f"{move.accuracy}%"),
+            ("PP", f"{move.pp}"),
+        ]:
+            lbl_s = self.font_tiny.render(label, True, DARK_GRAY)
+            val_s = self.font_small.render(value, True, BLACK)
+            self.screen.blit(lbl_s, (rect.x + 14, y))
+            self.screen.blit(val_s, (rect.right - val_s.get_width() - 14, y))
+            pygame.draw.line(self.screen, (210, 210, 190),
+                             (rect.x+10, y+18), (rect.right-10, y+18), 1)
+            y += 28
 
-        y_offset += 25
-        pp_text = self.font_small.render(f"PP: {move.pp}", True, BLACK)
-        self.screen.blit(pp_text, (rect.x + 20, rect.y + y_offset))
-
+        # Effetto
         if move.effect:
-            effect_text = self.font_tiny.render(f"{move.effect[:28]}", True, DARK_GRAY)
-            self.screen.blit(effect_text, (rect.x + 10, rect.y + 155))
+            eff = self.font_tiny.render(move.effect[:30], True, GRAY)
+            self.screen.blit(eff, (rect.x + 10, rect.y + 168))
 
-        hint = self.font_tiny.render("Click to select", True, BLUE)
-        self.screen.blit(hint, (rect.centerx - hint.get_width() // 2, rect.y + 178))
+        # Hint
+        hint = self.font_tiny.render("▶ Clicca per scegliere", True, type_col)
+        self.screen.blit(hint, (rect.centerx - hint.get_width()//2, rect.y + 192))
